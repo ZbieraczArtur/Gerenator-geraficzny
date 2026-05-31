@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edytor konfiguracji testów ideologicznych</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">JSON</div>
+        <div>
+          <h1>Edytor testów</h1>
+          <p>Konfiguracje ideologiczne</p>
+        </div>
+      </div>
+
+      <nav class="nav-tabs" aria-label="Sekcje edytora">
+        <button class="nav-tab active" data-section="pairs" type="button">Pary wartości <span data-count="pairs">0</span></button>
+        <button class="nav-tab" data-section="ideologies" type="button">Ideologie <span data-count="ideologies">0</span></button>
+        <button class="nav-tab" data-section="parties" type="button">Partie <span data-count="parties">0</span></button>
+        <button class="nav-tab" data-section="questions" type="button">Pytania <span data-count="questions">0</span></button>
+      </nav>
+
+      <div class="sidebar-actions">
+        <button id="themeToggle" class="icon-button" type="button" title="Przełącz tryb jasny i ciemny">☾</button>
+        <button id="resetDemoBtn" class="secondary-button" type="button">Nowy projekt</button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Graficzny edytor JSON</p>
+          <h2 id="sectionTitle">Pary wartości</h2>
+        </div>
+        <div class="topbar-actions">
+          <button id="importBtn" class="secondary-button" type="button">Import JSON</button>
+          <button id="exportBtn" class="primary-button" type="button">Eksport JSON</button>
+        </div>
+      </header>
+
+      <section id="pairsSection" class="editor-section active" data-section-panel="pairs">
+        <div class="section-head">
+          <div>
+            <h3>pairsOfValues</h3>
+            <p>Dodawaj osie wartości, które będą później dostępne w odpowiedziach pytań.</p>
+          </div>
+          <button id="addPairBtn" class="primary-button" type="button">Dodaj parę</button>
+        </div>
+        <div id="pairsList" class="item-list"></div>
+      </section>
+
+      <section id="ideologiesSection" class="editor-section" data-section-panel="ideologies">
+        <div class="section-head">
+          <div>
+            <h3>ideologies</h3>
+            <p>Opis może mieć wiele akapitów; podczas eksportu zostanie zapisany jako poprawny JSON.</p>
+          </div>
+          <button id="addIdeologyBtn" class="primary-button" type="button">Dodaj ideologię</button>
+        </div>
+        <div id="ideologiesList" class="item-list"></div>
+      </section>
+
+      <section id="partiesSection" class="editor-section" data-section-panel="parties">
+        <div class="section-head">
+          <div>
+            <h3>parties</h3>
+            <p>Partie działają tak samo jak ideologie i są dostępne w wyborach odpowiedzi.</p>
+          </div>
+          <button id="addPartyBtn" class="primary-button" type="button">Dodaj partię</button>
+        </div>
+        <div id="partiesList" class="item-list"></div>
+      </section>
+
+      <section id="questionsSection" class="editor-section" data-section-panel="questions">
+        <div class="section-head">
+          <div>
+            <h3>questions</h3>
+            <p>Pytania i odpowiedzi można przeciągać, a identyfikatory pytań przeliczają się automatycznie.</p>
+          </div>
+          <button id="addQuestionBtn" class="primary-button" type="button">Dodaj pytanie</button>
+        </div>
+        <div id="questionsList" class="item-list questions-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="importDialog" class="modal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head">
+        <h3>Import JSON</h3>
+        <button class="ghost-button close-modal" value="cancel" type="submit">×</button>
+      </div>
+      <label class="field">
+        <span>Wklej JSON</span>
+        <textarea id="importText" rows="12" placeholder="{ ... }"></textarea>
+      </label>
+      <label class="file-drop">
+        <input id="jsonFileInput" type="file" accept=".json,application/json">
+        <span>Wybierz plik JSON z dysku</span>
+      </label>
+      <div class="modal-actions">
+        <button class="secondary-button" value="cancel" type="submit">Anuluj</button>
+        <button id="applyImportBtn" class="primary-button" value="default" type="button">Wczytaj</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="exportDialog" class="modal">
+    <form method="dialog" class="modal-card modal-wide">
+      <div class="modal-head">
+        <h3>Eksport JSON</h3>
+        <button class="ghost-button close-modal" value="cancel" type="submit">×</button>
+      </div>
+      <div class="export-grid">
+        <div class="export-options">
+          <h4>Sekcje do eksportu</h4>
+          <label><input type="checkbox" class="export-check" value="pairsOfValues" checked> pairsOfValues</label>
+          <label><input type="checkbox" class="export-check" value="ideologies" checked> ideologies</label>
+          <label><input type="checkbox" class="export-check" value="parties" checked> parties</label>
+          <label><input type="checkbox" class="export-check" value="questions" checked> questions</label>
+          <div id="validationSummary" class="validation-summary"></div>
+        </div>
+        <label class="field">
+          <span>Podgląd JSON</span>
+          <textarea id="jsonPreview" rows="18" spellcheck="false" readonly></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button id="copyJsonBtn" class="secondary-button" type="button">Kopiuj</button>
+        <button id="downloadJsonBtn" class="primary-button" type="button">Pobierz plik</button>
+        <button class="secondary-button" value="cancel" type="submit">Zamknij</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="confirmDialog" class="modal">
+    <form method="dialog" class="modal-card small-modal">
+      <div class="modal-head">
+        <h3 id="confirmTitle">Potwierdzenie</h3>
+      </div>
+      <p id="confirmMessage"></p>
+      <div class="modal-actions">
+        <button id="confirmCancel" class="secondary-button" value="cancel" type="submit">Anuluj</button>
+        <button id="confirmOk" class="danger-button" value="default" type="button">Usuń</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,82 +1,111 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="pl">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>IdeoForge · Edytor konfiguracji testów ideologicznych</title>
+  <title>IdeoForge · Profesjonalny edytor konfiguracji testów ideologicznych</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app-container">
-    <!-- NAGŁÓWEK Z KONTROLAMI -->
-    <header class="top-bar">
-      <div class="brand">
-        <h1>🧠 IdeoForge</h1>
-        <span class="badge">JSON config editor</span>
+  <div class="app">
+    <!-- Pasek główny -->
+    <header class="app-header">
+      <div class="logo-area">
+        <h1>⚡ IdeoForge</h1>
+        <span class="version">JSON config studio</span>
       </div>
-      <div class="action-group">
-        <button id="themeToggleBtn" class="btn-icon" aria-label="Przełącz tryb">🌙</button>
-        <button id="importBtn" class="btn-outline">📂 Importuj JSON</button>
-        <button id="exportBtn" class="btn-primary">💾 Eksportuj</button>
+      <div class="header-actions">
+        <button id="themeSwitch" class="icon-btn" title="Przełącz tryb">🌙</button>
+        <button id="importJsonBtn" class="btn secondary">📂 Import</button>
+        <div class="export-group">
+          <button id="exportConfigBtn" class="btn primary">💾 Eksportuj</button>
+        </div>
       </div>
     </header>
 
-    <!-- GŁÓWNE SEKCJE (karty elementów) -->
-    <main class="dashboard">
-      <!-- SEKCJA pairsOfValues -->
-      <section class="card-section" data-section="pairs">
-        <div class="section-header">
+    <!-- GŁÓWNE KONTENERY SEKCJI -->
+    <main class="sections-grid">
+      <!-- PARY WARTOŚCI -->
+      <section class="config-card" data-section="pairs">
+        <div class="card-header">
           <h2>📐 Pary wartości (left/right)</h2>
-          <button class="btn-add" data-add="pair">+ Dodaj parę</button>
+          <button class="btn-icon add-item" data-type="pair">+ Dodaj</button>
         </div>
-        <div id="pairsListContainer" class="sortable-list" data-list-type="pairs"></div>
+        <div id="pairsList" class="sortable-items" data-list="pairs"></div>
       </section>
 
-      <!-- SEKCJA ideologies -->
-      <section class="card-section" data-section="ideologies">
-        <div class="section-header">
+      <!-- IDEOLOGIE -->
+      <section class="config-card" data-section="ideologies">
+        <div class="card-header">
           <h2>🏛️ Ideologie</h2>
-          <button class="btn-add" data-add="ideology">+ Dodaj ideologię</button>
+          <button class="btn-icon add-item" data-type="ideology">+ Dodaj</button>
         </div>
-        <div id="ideologiesListContainer" class="sortable-list" data-list-type="ideologies"></div>
+        <div id="ideologiesList" class="sortable-items" data-list="ideologies"></div>
       </section>
 
-      <!-- SEKCJA parties -->
-      <section class="card-section" data-section="parties">
-        <div class="section-header">
+      <!-- PARTIE -->
+      <section class="config-card" data-section="parties">
+        <div class="card-header">
           <h2>🎭 Partie polityczne</h2>
-          <button class="btn-add" data-add="party">+ Dodaj partię</button>
+          <button class="btn-icon add-item" data-type="party">+ Dodaj</button>
         </div>
-        <div id="partiesListContainer" class="sortable-list" data-list-type="parties"></div>
+        <div id="partiesList" class="sortable-items" data-list="parties"></div>
       </section>
 
-      <!-- SEKCJA questions (najbardziej rozbudowana) -->
-      <section class="card-section" data-section="questions">
-        <div class="section-header">
-          <h2>❓ Pytania testowe</h2>
-          <button class="btn-add" data-add="question">+ Dodaj pytanie</button>
+      <!-- PYTANIA -->
+      <section class="config-card full-width">
+        <div class="card-header">
+          <h2>❓ Pytania & odpowiedzi</h2>
+          <button class="btn-icon add-item" data-type="question">+ Nowe pytanie</button>
         </div>
-        <div id="questionsListContainer" class="sortable-list" data-list-type="questions"></div>
+        <div id="questionsList" class="sortable-items questions-container" data-list="questions"></div>
       </section>
     </main>
 
-    <!-- MODAL OGÓLNY (edycja/usuwanie/import) -->
-    <div id="genericModal" class="modal hidden">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3 id="modalTitle">Modal</h3>
-          <button class="close-modal">&times;</button>
+    <!-- MODAL UNIWERSALNY (edycja / usuwanie / import / eksport) -->
+    <div id="appModal" class="modal hidden">
+      <div class="modal-window">
+        <div class="modal-head">
+          <h3 id="modalTitle">Edytuj</h3>
+          <button class="modal-close">&times;</button>
         </div>
-        <div id="modalBody"></div>
-        <div class="modal-footer">
-          <button class="btn-secondary cancel-modal">Anuluj</button>
-          <button class="btn-primary confirm-modal">Zapisz</button>
+        <div id="modalContent" class="modal-body"></div>
+        <div class="modal-foot">
+          <button class="btn cancel-modal">Anuluj</button>
+          <button class="btn primary confirm-modal">Zatwierdź</button>
         </div>
       </div>
     </div>
 
+    <!-- EKSPORT (wybór sekcji) -->
+    <div id="exportModalContent" class="hidden">
+      <div class="export-options">
+        <label><input type="checkbox" value="pairsOfValues" checked> pairsOfValues</label>
+        <label><input type="checkbox" value="ideologies" checked> ideologies</label>
+        <label><input type="checkbox" value="parties" checked> parties</label>
+        <label><input type="checkbox" value="questions" checked> questions</label>
+      </div>
+      <div class="export-preview-area">
+        <textarea id="jsonPreview" rows="12" readonly placeholder="Podgląd JSON..."></textarea>
+        <div class="export-buttons">
+          <button id="copyJsonBtn" class="btn secondary">📋 Kopiuj do schowka</button>
+          <button id="downloadJsonBtn" class="btn primary">⬇️ Pobierz plik .json</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- IMPORT (JSON tekst lub plik) -->
+    <div id="importModalContent" class="hidden">
+      <div class="import-methods">
+        <button id="importFromFileBtn" class="btn secondary">📁 Wczytaj plik</button>
+        <textarea id="jsonRawInput" rows="8" placeholder="Wklej tutaj kod JSON..."></textarea>
+        <button id="processImportBtn" class="btn primary">🔁 Importuj dane</button>
+      </div>
+    </div>
+
     <!-- TOASTY -->
-    <div id="toastContainer" class="toast-container"></div>
+    <div id="toastRoot" class="toast-stack"></div>
   </div>
   <script src="script.js"></script>
 </body>

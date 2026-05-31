@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>IdeoForge · Edytor konfiguracji testów ideologicznych</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- NAGŁÓWEK Z KONTROLAMI -->
+    <header class="top-bar">
+      <div class="brand">
+        <h1>🧠 IdeoForge</h1>
+        <span class="badge">JSON config editor</span>
+      </div>
+      <div class="action-group">
+        <button id="themeToggleBtn" class="btn-icon" aria-label="Przełącz tryb">🌙</button>
+        <button id="importBtn" class="btn-outline">📂 Importuj JSON</button>
+        <button id="exportBtn" class="btn-primary">💾 Eksportuj</button>
+      </div>
+    </header>
+
+    <!-- GŁÓWNE SEKCJE (karty elementów) -->
+    <main class="dashboard">
+      <!-- SEKCJA pairsOfValues -->
+      <section class="card-section" data-section="pairs">
+        <div class="section-header">
+          <h2>📐 Pary wartości (left/right)</h2>
+          <button class="btn-add" data-add="pair">+ Dodaj parę</button>
+        </div>
+        <div id="pairsListContainer" class="sortable-list" data-list-type="pairs"></div>
+      </section>
+
+      <!-- SEKCJA ideologies -->
+      <section class="card-section" data-section="ideologies">
+        <div class="section-header">
+          <h2>🏛️ Ideologie</h2>
+          <button class="btn-add" data-add="ideology">+ Dodaj ideologię</button>
+        </div>
+        <div id="ideologiesListContainer" class="sortable-list" data-list-type="ideologies"></div>
+      </section>
+
+      <!-- SEKCJA parties -->
+      <section class="card-section" data-section="parties">
+        <div class="section-header">
+          <h2>🎭 Partie polityczne</h2>
+          <button class="btn-add" data-add="party">+ Dodaj partię</button>
+        </div>
+        <div id="partiesListContainer" class="sortable-list" data-list-type="parties"></div>
+      </section>
+
+      <!-- SEKCJA questions (najbardziej rozbudowana) -->
+      <section class="card-section" data-section="questions">
+        <div class="section-header">
+          <h2>❓ Pytania testowe</h2>
+          <button class="btn-add" data-add="question">+ Dodaj pytanie</button>
+        </div>
+        <div id="questionsListContainer" class="sortable-list" data-list-type="questions"></div>
+      </section>
+    </main>
+
+    <!-- MODAL OGÓLNY (edycja/usuwanie/import) -->
+    <div id="genericModal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modalTitle">Modal</h3>
+          <button class="close-modal">&times;</button>
+        </div>
+        <div id="modalBody"></div>
+        <div class="modal-footer">
+          <button class="btn-secondary cancel-modal">Anuluj</button>
+          <button class="btn-primary confirm-modal">Zapisz</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOASTY -->
+    <div id="toastContainer" class="toast-container"></div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>

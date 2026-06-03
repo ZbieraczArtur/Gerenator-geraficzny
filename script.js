@@ -1,3 +1,4 @@
+// script.js – wersja zoptymalizowana
 "use strict";
 
 /**
@@ -9,6 +10,10 @@ const state = {
   parties: [],
   questions: []
 };
+
+// Paginacja dla pytań
+let questionsCurrentPage = 0;
+const QUESTIONS_PER_PAGE = 20; // można zmienić na 10, 25 itd.
 
 const sectionTitles = {
   pairs: "Pary wartości",
@@ -34,6 +39,7 @@ const els = {
   ideologiesList: document.getElementById("ideologiesList"),
   partiesList: document.getElementById("partiesList"),
   questionsList: document.getElementById("questionsList"),
+  questionsPagination: document.getElementById("questionsPagination"),
   addPairBtn: document.getElementById("addPairBtn"),
   addIdeologyBtn: document.getElementById("addIdeologyBtn"),
   addPartyBtn: document.getElementById("addPartyBtn"),
@@ -59,6 +65,9 @@ const els = {
 };
 
 let pendingConfirm = null;
+let currentSection = "pairs";
+let validationDebounceTimer = null;
+let cleanupDebounceTimer = null;
 
 /**
  * Uruchamia aplikację, podpina zdarzenia i dodaje przykładowe puste pytanie.
@@ -69,8 +78,45 @@ function init() {
   addIdeology();
   addParty();
   addQuestion();
-  renderAll();
+  renderCurrentSection();
   toast("Gotowe do edycji. Dane są przechowywane lokalnie w tej karcie.");
+}
+
+/**
+ * Renderuje tylko aktywną sekcję – oszczędza DOM.
+ */
+function renderCurrentSection() {
+  switch (currentSection) {
+    case "pairs":
+      renderPairs();
+      break;
+    case "ideologies":
+      renderNameDescriptionList("ideologies", els.ideologiesList, "Ideologia");
+      break;
+    case "parties":
+      renderNameDescriptionList("parties", els.partiesList, "Partia");
+      break;
+    case "questions":
+      renderQuestions();
+      renderQuestionsPagination();
+      break;
+  }
+  renderCounters();
+  scheduleValidation();
+  scheduleCleanup();
+}
+
+/**
+ * Odroczone walidacje i czyszczenie referencji – nie blokują interfejsu.
+ */
+function scheduleValidation() {
+  if (validationDebounceTimer) clearTimeout(validationDebounceTimer);
+  validationDebounceTimer = setTimeout(() => validateAll(), 150);
+}
+
+function scheduleCleanup() {
+  if (cleanupDebounceTimer) clearTimeout(cleanupDebounceTimer);
+  cleanupDebounceTimer = setTimeout(() => cleanupReferences(), 200);
 }
 
 /**
@@ -78,7 +124,11 @@ function init() {
  */
 function bindGlobalEvents() {
   els.navTabs.forEach(tab => {
-    tab.addEventListener("click", () => switchSection(tab.dataset.section));
+    tab.addEventListener("click", () => {
+      currentSection = tab.dataset.section;
+      switchSection(currentSection);
+      renderCurrentSection();
+    });
   });
 
   els.addPairBtn.addEventListener("click", () => addPair());
@@ -107,7 +157,7 @@ function bindGlobalEvents() {
 }
 
 /**
- * Przełącza widoczną sekcję edytora bez przeładowania strony.
+ * Przełącza widoczną sekcję edytora.
  */
 function switchSection(section) {
   els.navTabs.forEach(tab => tab.classList.toggle("active", tab.dataset.section === section));
@@ -131,11 +181,12 @@ function resetProject() {
   state.ideologies = [];
   state.parties = [];
   state.questions = [];
+  questionsCurrentPage = 0;
   addPair(false);
   addIdeology(false);
   addParty(false);
   addQuestion(false);
-  renderAll();
+  renderCurrentSection();
   toast("Utworzono nowy projekt.");
 }
 
@@ -145,7 +196,7 @@ function resetProject() {
 function addPair(shouldRender = true) {
   state.pairsOfValues.push({ left: "", right: "", leftDef: "", rightDef: "" });
   if (shouldRender) {
-    renderAll();
+    renderCurrentSection();
     toast("Dodano parę wartości.");
   }
 }
@@ -156,7 +207,7 @@ function addPair(shouldRender = true) {
 function addIdeology(shouldRender = true) {
   state.ideologies.push({ name: "", description: "" });
   if (shouldRender) {
-    renderAll();
+    renderCurrentSection();
     toast("Dodano ideologię.");
   }
 }
@@ -167,7 +218,7 @@ function addIdeology(shouldRender = true) {
 function addParty(shouldRender = true) {
   state.parties.push({ name: "", description: "" });
   if (shouldRender) {
-    renderAll();
+    renderCurrentSection();
     toast("Dodano partię.");
   }
 }
@@ -189,14 +240,19 @@ function addQuestion(shouldRender = true) {
     ]
   });
   renumberQuestions();
+  // Jeśli dodajemy na innej stronie niż ostatnia, przenieś na ostatnią
+  const totalPages = Math.ceil(state.questions.length / QUESTIONS_PER_PAGE);
+  if (questionsCurrentPage !== totalPages - 1) {
+    questionsCurrentPage = totalPages - 1;
+  }
   if (shouldRender) {
-    renderAll();
+    renderCurrentSection();
     toast("Dodano pytanie.");
   }
 }
 
 /**
- * Tworzy pustą odpowiedź zgodną ze strukturą eksportowanego JSON.
+ * Tworzy pustą odpowiedź.
  */
 function createAnswer(label = "", value = 0) {
   return {
@@ -213,16 +269,10 @@ function createAnswer(label = "", value = 0) {
 
 /**
  * Renderuje wszystkie części interfejsu na podstawie aktualnego stanu.
+ * (Zachowane dla kompatybilności, ale w praktyce używamy renderCurrentSection)
  */
 function renderAll() {
-  cleanupReferences();
-  renumberQuestions();
-  renderPairs();
-  renderNameDescriptionList("ideologies", els.ideologiesList, "Ideologia");
-  renderNameDescriptionList("parties", els.partiesList, "Partia");
-  renderQuestions();
-  renderCounters();
-  validateAll();
+  renderCurrentSection();
 }
 
 /**
@@ -236,7 +286,7 @@ function renderCounters() {
 }
 
 /**
- * Renderuje listę par wartości wraz z polami definicji.
+ * Renderuje listę par wartości.
  */
 function renderPairs() {
   els.pairsList.innerHTML = "";
@@ -264,7 +314,7 @@ function renderPairs() {
     els.pairsList.append(card);
   });
 
-  enableDrag(els.pairsList, state.pairsOfValues, renderAll);
+  enableDrag(els.pairsList, state.pairsOfValues, renderCurrentSection);
 }
 
 /**
@@ -273,7 +323,7 @@ function renderPairs() {
 function updatePair(index, key, value) {
   state.pairsOfValues[index][key] = value;
   renderCounters();
-  validateAll();
+  scheduleValidation();
 }
 
 /**
@@ -294,21 +344,21 @@ function renderNameDescriptionList(type, host, label) {
     body.append(
       inputField("name", "name", item.name, value => {
         item.name = value;
-        validateAll();
+        scheduleValidation();
       }),
       textareaField("description", "description", item.description, value => {
         item.description = value;
-        validateAll();
+        scheduleValidation();
       })
     );
     host.append(card);
   });
 
-  enableDrag(host, state[type], renderAll);
+  enableDrag(host, state[type], renderCurrentSection);
 }
 
 /**
- * Renderuje listę pytań i zagnieżdżonych odpowiedzi.
+ * Renderuje listę pytań – TYLKO dla bieżącej strony.
  */
 function renderQuestions() {
   els.questionsList.innerHTML = "";
@@ -317,10 +367,20 @@ function renderQuestions() {
     return;
   }
 
-  state.questions.forEach((question, questionIndex) => {
+  const start = questionsCurrentPage * QUESTIONS_PER_PAGE;
+  const end = Math.min(start + QUESTIONS_PER_PAGE, state.questions.length);
+  const pageQuestions = state.questions.slice(start, end);
+
+  pageQuestions.forEach((question, idx) => {
+    const globalIndex = start + idx;
     const title = question.text ? `#${question.id} ${question.text}` : `Pytanie #${question.id}`;
-    const card = cardShell("question", questionIndex, title, `${question.answers.length} odpowiedzi`, () => {
-      removeItem(state.questions, questionIndex, "Usunąć to pytanie?");
+    const card = cardShell("question", globalIndex, title, `${question.answers.length} odpowiedzi`, () => {
+      removeItem(state.questions, globalIndex, "Usunąć to pytanie?");
+      // Po usunięciu dostosuj stronę
+      const totalPages = Math.ceil(state.questions.length / QUESTIONS_PER_PAGE);
+      if (questionsCurrentPage >= totalPages && totalPages > 0) questionsCurrentPage = totalPages - 1;
+      if (questionsCurrentPage < 0) questionsCurrentPage = 0;
+      renderCurrentSection();
     });
     const body = card.querySelector(".card-body");
     body.append(
@@ -328,22 +388,65 @@ function renderQuestions() {
         inputField("id", "id", question.id, () => {}, "number", true),
         inputField("text", "text", question.text, value => {
           question.text = value;
-          validateAll();
+          scheduleValidation();
         })
       ),
       textareaField("description", "description", question.description, value => {
         question.description = value;
-        validateAll();
+        scheduleValidation();
       }),
-      renderAnswers(question, questionIndex)
+      renderAnswers(question, globalIndex)
     );
     els.questionsList.append(card);
   });
 
   enableDrag(els.questionsList, state.questions, () => {
     renumberQuestions();
-    renderAll();
+    renderCurrentSection();
   });
+}
+
+/**
+ * Renderuje paginację dla sekcji pytań.
+ */
+function renderQuestionsPagination() {
+  if (!els.questionsPagination) return;
+  const totalQuestions = state.questions.length;
+  const totalPages = Math.ceil(totalQuestions / QUESTIONS_PER_PAGE);
+  if (totalPages <= 1) {
+    els.questionsPagination.innerHTML = "";
+    return;
+  }
+
+  const container = els.questionsPagination;
+  container.innerHTML = "";
+  const prevBtn = document.createElement("button");
+  prevBtn.textContent = "← Poprzednia";
+  prevBtn.className = "secondary-button";
+  prevBtn.disabled = questionsCurrentPage === 0;
+  prevBtn.addEventListener("click", () => {
+    if (questionsCurrentPage > 0) {
+      questionsCurrentPage--;
+      renderCurrentSection();
+    }
+  });
+
+  const pageInfo = document.createElement("span");
+  pageInfo.textContent = `Strona ${questionsCurrentPage + 1} z ${totalPages}`;
+  pageInfo.style.margin = "0 1rem";
+
+  const nextBtn = document.createElement("button");
+  nextBtn.textContent = "Następna →";
+  nextBtn.className = "secondary-button";
+  nextBtn.disabled = questionsCurrentPage === totalPages - 1;
+  nextBtn.addEventListener("click", () => {
+    if (questionsCurrentPage < totalPages - 1) {
+      questionsCurrentPage++;
+      renderCurrentSection();
+    }
+  });
+
+  container.append(prevBtn, pageInfo, nextBtn);
 }
 
 /**
@@ -362,7 +465,7 @@ function renderAnswers(question, questionIndex) {
   addButton.textContent = "Dodaj odpowiedź";
   addButton.addEventListener("click", () => {
     question.answers.push(createAnswer());
-    renderAll();
+    renderCurrentSection();
   });
   head.append(addButton);
   block.append(head);
@@ -392,7 +495,7 @@ function renderAnswers(question, questionIndex) {
     removeBtn.textContent = "Usuń";
     removeBtn.addEventListener("click", confirmAction("Usuń odpowiedź", "Usunąć tę odpowiedź?", () => {
       question.answers.splice(answerIndex, 1);
-      renderAll();
+      renderCurrentSection();
     }));
     actions.append(removeBtn);
 
@@ -401,11 +504,11 @@ function renderAnswers(question, questionIndex) {
       twoColumn(
         inputField("label", "label", answer.label, value => {
           answer.label = value;
-          validateAll();
+          scheduleValidation();
         }),
         inputField("value", "value", answer.value, value => {
           answer.value = parseNumber(value);
-          validateAll();
+          scheduleValidation();
         }, "number")
       ),
       multiSelectGrid(answer)
@@ -413,7 +516,7 @@ function renderAnswers(question, questionIndex) {
     list.append(card);
   });
   block.append(list);
-  enableDrag(list, question.answers, renderAll);
+  enableDrag(list, question.answers, () => renderCurrentSection());
   return block;
 }
 
@@ -423,6 +526,7 @@ function renderAnswers(question, questionIndex) {
 function multiSelectGrid(answer) {
   const grid = document.createElement("div");
   grid.className = "multi-grid";
+  // Pobieramy opcje tylko raz dla całej siatki (lekka optymalizacja)
   const valueOptions = getValueOptions();
   const ideologyOptions = state.ideologies.map(item => item.name).filter(Boolean);
   const partyOptions = state.parties.map(item => item.name).filter(Boolean);
@@ -471,7 +575,7 @@ function multiSelect(label, options, selected, onChange) {
       chip.querySelector("button").addEventListener("click", () => {
         const next = safeSelected.filter(item => item !== value);
         onChange(next);
-        renderAll();
+        renderCurrentSection();
       });
       chips.append(chip);
     });
@@ -486,7 +590,7 @@ function multiSelect(label, options, selected, onChange) {
         item.querySelector("input").addEventListener("change", event => {
           const next = event.target.checked ? unique([...safeSelected, option]) : safeSelected.filter(value => value !== option);
           onChange(next);
-          renderAll();
+          renderCurrentSection();
         });
         list.append(item);
       });
@@ -502,7 +606,7 @@ function multiSelect(label, options, selected, onChange) {
 }
 
 /**
- * Tworzy bazową kartę elementu z uchwytem przeciągania i przyciskiem usuwania.
+ * Tworzy bazową kartę elementu.
  */
 function cardShell(type, index, title, subtitle, onRemove) {
   const card = document.createElement("article");
@@ -531,7 +635,7 @@ function cardShell(type, index, title, subtitle, onRemove) {
 }
 
 /**
- * Tworzy pole tekstowe z natychmiastową aktualizacją stanu.
+ * Tworzy pole tekstowe.
  */
 function inputField(id, label, value, onInput, type = "text", readonly = false) {
   const field = document.createElement("label");
@@ -545,7 +649,7 @@ function inputField(id, label, value, onInput, type = "text", readonly = false) 
 }
 
 /**
- * Tworzy wieloliniowe pole tekstowe z natychmiastową aktualizacją stanu.
+ * Tworzy wieloliniowe pole tekstowe.
  */
 function textareaField(id, label, value, onInput) {
   const field = document.createElement("label");
@@ -558,7 +662,7 @@ function textareaField(id, label, value, onInput) {
 }
 
 /**
- * Układa dwa elementy formularza obok siebie na desktopie.
+ * Układa dwa elementy formularza obok siebie.
  */
 function twoColumn(first, second) {
   const grid = document.createElement("div");
@@ -611,16 +715,16 @@ function enableDrag(container, array, afterDrop) {
 }
 
 /**
- * Usuwa element z tablicy po potwierdzeniu i odświeża interfejs.
+ * Usuwa element z tablicy.
  */
 function removeItem(array, index, message) {
   array.splice(index, 1);
-  renderAll();
+  renderCurrentSection();
   toast(message ? "Usunięto element." : "Usunięto.");
 }
 
 /**
- * Otwiera modal potwierdzenia dla operacji ryzykownych.
+ * Otwiera modal potwierdzenia.
  */
 function confirmAction(title, message, callback) {
   return () => {
@@ -632,7 +736,7 @@ function confirmAction(title, message, callback) {
 }
 
 /**
- * Przelicza identyfikatory pytań zgodnie z aktualną kolejnością.
+ * Przelicza identyfikatory pytań.
  */
 function renumberQuestions() {
   state.questions.forEach((question, index) => {
@@ -670,7 +774,7 @@ function cleanupReferences() {
 }
 
 /**
- * Sprawdza wymagane pola i oznacza błędy w formularzach.
+ * Sprawdza wymagane pola (odroczone).
  */
 function validateAll() {
   document.querySelectorAll(".invalid").forEach(node => node.classList.remove("invalid"));
@@ -691,11 +795,17 @@ function validateAll() {
     });
   });
 
+  // Opcjonalnie wyświetl błędy w export dialogu przy podglądzie
+  const summaryDiv = document.getElementById("validationSummary");
+  if (summaryDiv) {
+    summaryDiv.innerHTML = errors.slice(0, 8).map(e => `<div>${escapeHtml(e)}</div>`).join("");
+    if (errors.length > 8) summaryDiv.innerHTML += `<div>...oraz ${errors.length - 8} więcej.</div>`;
+  }
   return errors;
 }
 
 /**
- * Waliduje kolekcje z polami name i description.
+ * Waliduje kolekcje z polami name.
  */
 function validateNamedCollection(collection, label, errors) {
   collection.forEach((item, index) => {
@@ -704,7 +814,7 @@ function validateNamedCollection(collection, label, errors) {
 }
 
 /**
- * Otwiera okno eksportu i generuje bieżący podgląd JSON.
+ * Otwiera okno eksportu.
  */
 function openExportDialog() {
   updateJsonPreview();
@@ -728,19 +838,15 @@ function buildExportObject() {
 }
 
 /**
- * Aktualizuje tekstowy podgląd eksportowanego JSON.
+ * Aktualizuje podgląd JSON.
  */
 function updateJsonPreview() {
-  const errors = validateAll();
-  els.validationSummary.innerHTML = errors.slice(0, 8).map(error => `<div>${escapeHtml(error)}</div>`).join("");
-  if (errors.length > 8) {
-    els.validationSummary.innerHTML += `<div>...oraz ${errors.length - 8} więcej.</div>`;
-  }
+  const errors = validateAll(); // walidacja tutaj może być, bo robi się ją tylko na żądanie eksportu
   els.jsonPreview.value = JSON.stringify(buildExportObject(), null, 2);
 }
 
 /**
- * Kopiuje wygenerowany JSON do schowka.
+ * Kopiuje JSON do schowka.
  */
 async function copyJson() {
   updateJsonPreview();
@@ -755,7 +861,7 @@ async function copyJson() {
 }
 
 /**
- * Pobiera wygenerowany JSON jako plik.
+ * Pobiera JSON jako plik.
  */
 function downloadJson() {
   updateJsonPreview();
@@ -771,25 +877,40 @@ function downloadJson() {
 }
 
 /**
- * Importuje JSON wklejony do pola tekstowego.
+ * Importuje JSON wklejony do pola tekstowego – asynchronicznie, z loaderem.
  */
-function importFromTextarea() {
+async function importFromTextarea() {
   const raw = els.importText.value.trim();
   if (!raw) {
     toast("Wklej JSON albo wybierz plik.", "error");
     return;
   }
+  let data;
   try {
-    applyImportedData(JSON.parse(raw));
+    data = JSON.parse(raw);
+  } catch (error) {
+    toast(`Nie udało się wczytać JSON: ${error.message}`, "error");
+    return;
+  }
+
+  toast("Importowanie dużego zestawu danych...", "info");
+  // Ustępujemy głównemu wątkowi, by pokazać toast
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  try {
+    applyImportedData(data);
+    // Po imporcie ustaw stronę pytań na pierwszą
+    questionsCurrentPage = 0;
+    renderCurrentSection();
     els.importDialog.close();
     toast("Zaimportowano JSON.");
   } catch (error) {
-    toast(`Nie udało się wczytać JSON: ${error.message}`, "error");
+    toast(`Błąd podczas importu: ${error.message}`, "error");
   }
 }
 
 /**
- * Odczytuje wybrany plik JSON i podstawia go do pola importu.
+ * Odczytuje wybrany plik JSON.
  */
 function handleFileImport(event) {
   const file = event.target.files[0];
@@ -829,7 +950,7 @@ function applyImportedData(data) {
   }));
 
   if (!state.questions.length) addQuestion(false);
-  renderAll();
+  // Nie wywołujemy renderAll() tutaj – zrobi to funkcja wołająca
 }
 
 /**
@@ -843,7 +964,7 @@ function normalizeNamedItem(item = {}) {
 }
 
 /**
- * Normalizuje odpowiedź po imporcie i pilnuje kompletnej struktury.
+ * Normalizuje odpowiedź po imporcie.
  */
 function normalizeAnswer(item = {}) {
   const answer = createAnswer(stringValue(item.label), parseNumber(item.value));
@@ -865,28 +986,28 @@ function toast(message, type = "success") {
 }
 
 /**
- * Zwraca tablicę unikalnych wartości z zachowaniem kolejności.
+ * Zwraca tablicę unikalnych wartości.
  */
 function unique(values) {
   return [...new Set(values)];
 }
 
 /**
- * Gwarantuje tablicę podczas importu.
+ * Gwarantuje tablicę.
  */
 function ensureArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
 /**
- * Konwertuje wartość na string bez utraty prawdziwych nowych linii.
+ * Konwertuje na string.
  */
 function stringValue(value) {
   return typeof value === "string" ? value : "";
 }
 
 /**
- * Konwertuje wartość formularza na liczbę.
+ * Konwertuje na liczbę.
  */
 function parseNumber(value) {
   const parsed = Number(value);
@@ -894,14 +1015,14 @@ function parseNumber(value) {
 }
 
 /**
- * Tworzy głęboką kopię danych eksportowych.
+ * Tworzy głęboką kopię.
  */
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
 /**
- * Zabezpiecza tekst przed wstrzyknięciem HTML.
+ * Zabezpiecza tekst przed HTML.
  */
 function escapeHtml(value) {
   return String(value)
@@ -913,7 +1034,7 @@ function escapeHtml(value) {
 }
 
 /**
- * Zabezpiecza wartości umieszczane w atrybutach HTML.
+ * Zabezpiecza wartości w atrybutach.
  */
 function escapeAttribute(value) {
   return escapeHtml(value).replaceAll("`", "&#096;");

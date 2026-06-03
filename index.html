@@ -81,10 +81,18 @@
             <h3>questions</h3>
             <p>Pytania i odpowiedzi można przeciągać, a identyfikatory pytań przeliczają się automatycznie.</p>
           </div>
-          <button id="addQuestionBtn" class="primary-button" type="button">Dodaj pytanie</button>
+          <div class="section-controls">
+            <span id="questionRangeInfo" class="range-info"></span>
+            <button id="addQuestionBtn" class="primary-button" type="button">Dodaj pytanie</button>
+          </div>
         </div>
-        <div id="questionsList" class="item-list questions-list"></div>
-        <div id="questionsPagination" class="pagination-controls"></div>
+        <div id="questionsList" class="item-list questions-list virtual-scroll-container"></div>
+        <!-- Paginacja nawigacyjna -->
+        <div class="pagination-nav" id="paginationNav">
+          <button id="prevPageBtn" class="pagination-btn" disabled>← Poprzednie</button>
+          <div id="pageNumbers" class="page-numbers"></div>
+          <button id="nextPageBtn" class="pagination-btn">Następne →</button>
+        </div>
       </section>
     </main>
   </div>
@@ -152,6 +160,1096 @@
   </dialog>
 
   <div id="toastHost" class="toast-host" aria-live="polite"></div>
-  <script src="script.js"></script>
+  
+  <style>
+    /* Dodatkowe style dla wirtualnego przewijania i paginacji */
+    .virtual-scroll-container {
+      min-height: 400px;
+      max-height: 60vh;
+      overflow-y: auto;
+      position: relative;
+    }
+    
+    .virtual-scroll-spacer {
+      position: relative;
+      width: 100%;
+    }
+    
+    .virtual-scroll-content {
+      position: absolute;
+      left: 0;
+      right: 0;
+    }
+    
+    .pagination-nav {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      margin-top: 20px;
+      padding: 12px 16px;
+      background: var(--bg-elevated);
+      border-radius: 12px;
+      flex-wrap: wrap;
+    }
+    
+    .pagination-btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .pagination-btn:hover:not(:disabled) {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    
+    .pagination-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    
+    .page-numbers {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    
+    .page-number {
+      min-width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      cursor: pointer;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    
+    .page-number:hover {
+      background: var(--bg-hover);
+    }
+    
+    .page-number.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    
+    .section-controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    
+    .range-info {
+      font-size: 13px;
+      color: var(--text-secondary);
+      background: var(--bg-elevated);
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+    
+    /* Optymalizacje wydajnościowe */
+    .editor-card {
+      will-change: transform;
+      contain: content;
+    }
+    
+    .answers-block .item-list {
+      max-height: none;
+      overflow: visible;
+    }
+  </style>
+  
+  <script>
+    "use strict";
+
+    /**
+     * Centralny stan aplikacji przechowuje dane tylko w pamięci przeglądarki.
+     */
+    const state = {
+      pairsOfValues: [],
+      ideologies: [],
+      parties: [],
+      questions: []
+    };
+
+    // Konfiguracja paginacji dla pytań
+    const PAGINATION = {
+      pageSize: 30,      // 30 pytań na stronę
+      currentPage: 1
+    };
+
+    const sectionTitles = {
+      pairs: "Pary wartości",
+      ideologies: "Ideologie",
+      parties: "Partie",
+      questions: "Pytania"
+    };
+
+    const answerListKeys = [
+      "values_for",
+      "values_against",
+      "ideologies_for",
+      "ideologies_against",
+      "parties_for",
+      "parties_against"
+    ];
+
+    const els = {
+      navTabs: document.querySelectorAll(".nav-tab"),
+      panels: document.querySelectorAll("[data-section-panel]"),
+      sectionTitle: document.getElementById("sectionTitle"),
+      pairsList: document.getElementById("pairsList"),
+      ideologiesList: document.getElementById("ideologiesList"),
+      partiesList: document.getElementById("partiesList"),
+      questionsList: document.getElementById("questionsList"),
+      addPairBtn: document.getElementById("addPairBtn"),
+      addIdeologyBtn: document.getElementById("addIdeologyBtn"),
+      addPartyBtn: document.getElementById("addPartyBtn"),
+      addQuestionBtn: document.getElementById("addQuestionBtn"),
+      importBtn: document.getElementById("importBtn"),
+      exportBtn: document.getElementById("exportBtn"),
+      themeToggle: document.getElementById("themeToggle"),
+      resetDemoBtn: document.getElementById("resetDemoBtn"),
+      importDialog: document.getElementById("importDialog"),
+      exportDialog: document.getElementById("exportDialog"),
+      confirmDialog: document.getElementById("confirmDialog"),
+      importText: document.getElementById("importText"),
+      jsonFileInput: document.getElementById("jsonFileInput"),
+      applyImportBtn: document.getElementById("applyImportBtn"),
+      jsonPreview: document.getElementById("jsonPreview"),
+      copyJsonBtn: document.getElementById("copyJsonBtn"),
+      downloadJsonBtn: document.getElementById("downloadJsonBtn"),
+      validationSummary: document.getElementById("validationSummary"),
+      toastHost: document.getElementById("toastHost"),
+      confirmTitle: document.getElementById("confirmTitle"),
+      confirmMessage: document.getElementById("confirmMessage"),
+      confirmOk: document.getElementById("confirmOk"),
+      prevPageBtn: document.getElementById("prevPageBtn"),
+      nextPageBtn: document.getElementById("nextPageBtn"),
+      pageNumbers: document.getElementById("pageNumbers"),
+      questionRangeInfo: document.getElementById("questionRangeInfo")
+    };
+
+    let pendingConfirm = null;
+    let currentRenderedQuestions = []; // Cache dla renderowanych pytań na stronie
+
+    /**
+     * Uruchamia aplikację, podpina zdarzenia i dodaje przykładowe puste pytanie.
+     */
+    function init() {
+      bindGlobalEvents();
+      addPair();
+      addIdeology();
+      addParty();
+      addQuestion();
+      renderAll();
+      toast("Gotowe do edycji. Dane są przechowywane lokalnie w tej karcie.");
+    }
+
+    /**
+     * Podpina przyciski globalne, import, eksport i obsługę modali.
+     */
+    function bindGlobalEvents() {
+      els.navTabs.forEach(tab => {
+        tab.addEventListener("click", () => switchSection(tab.dataset.section));
+      });
+
+      els.addPairBtn.addEventListener("click", () => addPair());
+      els.addIdeologyBtn.addEventListener("click", () => addIdeology());
+      els.addPartyBtn.addEventListener("click", () => addParty());
+      els.addQuestionBtn.addEventListener("click", () => addQuestion());
+      els.importBtn.addEventListener("click", () => els.importDialog.showModal());
+      els.exportBtn.addEventListener("click", openExportDialog);
+      els.applyImportBtn.addEventListener("click", importFromTextarea);
+      els.copyJsonBtn.addEventListener("click", copyJson);
+      els.downloadJsonBtn.addEventListener("click", downloadJson);
+      els.resetDemoBtn.addEventListener("click", confirmAction("Nowy projekt", "Usunąć wszystkie bieżące dane z edytora?", resetProject));
+      els.themeToggle.addEventListener("click", toggleTheme);
+      
+      // Paginacja
+      if (els.prevPageBtn) {
+        els.prevPageBtn.addEventListener("click", () => changePage(-1));
+        els.nextPageBtn.addEventListener("click", () => changePage(1));
+      }
+
+      document.querySelectorAll(".export-check").forEach(input => {
+        input.addEventListener("change", updateJsonPreview);
+      });
+
+      els.jsonFileInput.addEventListener("change", handleFileImport);
+
+      els.confirmOk.addEventListener("click", () => {
+        if (typeof pendingConfirm === "function") pendingConfirm();
+        pendingConfirm = null;
+        els.confirmDialog.close();
+      });
+    }
+
+    /**
+     * Zmiana strony paginacji
+     */
+    function changePage(delta) {
+      const totalPages = getTotalPages();
+      const newPage = PAGINATION.currentPage + delta;
+      if (newPage >= 1 && newPage <= totalPages) {
+        PAGINATION.currentPage = newPage;
+        renderQuestionsOnly();
+        updatePaginationUI();
+        // Przewiń do góry listy pytań
+        if (els.questionsList) {
+          els.questionsList.scrollTop = 0;
+        }
+      }
+    }
+
+    /**
+     * Przejście do konkretnej strony
+     */
+    function goToPage(page) {
+      const totalPages = getTotalPages();
+      if (page >= 1 && page <= totalPages) {
+        PAGINATION.currentPage = page;
+        renderQuestionsOnly();
+        updatePaginationUI();
+        if (els.questionsList) {
+          els.questionsList.scrollTop = 0;
+        }
+      }
+    }
+
+    /**
+     * Oblicza całkowitą liczbę stron
+     */
+    function getTotalPages() {
+      return Math.max(1, Math.ceil(state.questions.length / PAGINATION.pageSize));
+    }
+
+    /**
+     * Aktualizuje UI paginacji
+     */
+    function updatePaginationUI() {
+      const totalPages = getTotalPages();
+      const startIndex = (PAGINATION.currentPage - 1) * PAGINATION.pageSize;
+      const endIndex = Math.min(startIndex + PAGINATION.pageSize, state.questions.length);
+      
+      if (els.questionRangeInfo) {
+        if (state.questions.length === 0) {
+          els.questionRangeInfo.textContent = "0 pytań";
+        } else {
+          els.questionRangeInfo.textContent = `Wyświetlono ${startIndex + 1}-${endIndex} z ${state.questions.length} pytań`;
+        }
+      }
+      
+      if (els.prevPageBtn) {
+        els.prevPageBtn.disabled = PAGINATION.currentPage === 1;
+        els.nextPageBtn.disabled = PAGINATION.currentPage === totalPages;
+      }
+      
+      if (els.pageNumbers) {
+        els.pageNumbers.innerHTML = "";
+        const maxVisible = 7;
+        let startPage = Math.max(1, PAGINATION.currentPage - Math.floor(maxVisible / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        
+        if (endPage - startPage + 1 < maxVisible) {
+          startPage = Math.max(1, endPage - maxVisible + 1);
+        }
+        
+        for (let i = startPage; i <= endPage; i++) {
+          const pageBtn = document.createElement("button");
+          pageBtn.className = `page-number ${i === PAGINATION.currentPage ? 'active' : ''}`;
+          pageBtn.textContent = i;
+          pageBtn.addEventListener("click", () => goToPage(i));
+          els.pageNumbers.appendChild(pageBtn);
+        }
+      }
+    }
+
+    /**
+     * Renderuje tylko pytania (optymalizacja - bez przebudowy całej sekcji)
+     */
+    function renderQuestionsOnly() {
+      if (!els.questionsList) return;
+      
+      const startIndex = (PAGINATION.currentPage - 1) * PAGINATION.pageSize;
+      const endIndex = Math.min(startIndex + PAGINATION.pageSize, state.questions.length);
+      const pageQuestions = state.questions.slice(startIndex, endIndex);
+      
+      // Zachowaj scroll position przed renderowaniem
+      const scrollTop = els.questionsList.scrollTop;
+      
+      // Szybkie czyszczenie z zachowaniem referencji
+      while (els.questionsList.firstChild) {
+        els.questionsList.removeChild(els.questionsList.firstChild);
+      }
+      
+      if (!pageQuestions.length) {
+        els.questionsList.append(emptyState("Brak pytań. Dodaj pierwsze pytanie."));
+      } else {
+        // Użyj DocumentFragment dla lepszej wydajności
+        const fragment = document.createDocumentFragment();
+        
+        pageQuestions.forEach((question, idx) => {
+          const globalIndex = startIndex + idx;
+          const card = createQuestionCard(question, globalIndex);
+          fragment.appendChild(card);
+        });
+        
+        els.questionsList.appendChild(fragment);
+      }
+      
+      // Przywróć scroll
+      els.questionsList.scrollTop = scrollTop;
+      
+      // Aktualizuj liczniki
+      renderCounters();
+    }
+
+    /**
+     * Tworzy pojedynczą kartę pytania - wydzielona funkcja dla lepszej wydajności
+     */
+    function createQuestionCard(question, globalIndex) {
+      const title = question.text ? `#${question.id} ${question.text.substring(0, 50)}${question.text.length > 50 ? '...' : ''}` : `Pytanie #${question.id}`;
+      const card = cardShell("question", globalIndex, title, `${question.answers.length} odpowiedzi`, () => {
+        removeItem(state.questions, globalIndex, "Usunąć to pytanie?");
+      });
+      const body = card.querySelector(".card-body");
+      body.append(
+        twoColumn(
+          inputField("id", "id", question.id, () => {}, "number", true),
+          inputField("text", "text", question.text, value => {
+            question.text = value;
+            validateAll();
+            // Aktualizuj tytuł karty bez rerenderu całej listy
+            const titleDiv = card.querySelector(".item-title");
+            if (titleDiv) {
+              const newTitle = value ? `#${question.id} ${value.substring(0, 50)}${value.length > 50 ? '...' : ''}` : `Pytanie #${question.id}`;
+              titleDiv.textContent = newTitle;
+            }
+          })
+        ),
+        textareaField("description", "description", question.description, value => {
+          question.description = value;
+          validateAll();
+        }),
+        renderAnswersOptimized(question, globalIndex, card)
+      );
+      return card;
+    }
+
+    /**
+     * Zoptymalizowana wersja renderowania odpowiedzi
+     */
+    function renderAnswersOptimized(question, questionIndex, card) {
+      const block = document.createElement("div");
+      block.className = "answers-block";
+
+      const head = document.createElement("div");
+      head.className = "section-head";
+      head.innerHTML = `<div><h3>answers</h3><p>Listy wyboru korzystają z aktualnych wartości, ideologii i partii.</p></div>`;
+      const addButton = document.createElement("button");
+      addButton.type = "button";
+      addButton.className = "secondary-button";
+      addButton.textContent = "Dodaj odpowiedź";
+      addButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        question.answers.push(createAnswer());
+        renderQuestionsOnly(); // Odśwież tylko pytania
+      });
+      head.append(addButton);
+      block.append(head);
+
+      const list = document.createElement("div");
+      list.className = "item-list";
+      
+      question.answers.forEach((answer, answerIndex) => {
+        const answerCard = createAnswerCard(answer, answerIndex, question, questionIndex);
+        list.append(answerCard);
+      });
+      
+      block.append(list);
+      
+      // Obsługa drag & drop dla odpowiedzi
+      enableDrag(list, question.answers, () => {
+        renderQuestionsOnly();
+      });
+      
+      return block;
+    }
+
+    /**
+     * Tworzy kartę odpowiedzi
+     */
+    function createAnswerCard(answer, answerIndex, question, questionIndex) {
+      const card = document.createElement("article");
+      card.className = "answer-card";
+      card.draggable = true;
+      card.dataset.index = answerIndex;
+      card.innerHTML = `
+        <div class="answer-header">
+          <span class="drag-handle" title="Przeciągnij">↕</span>
+          <div>
+            <div class="item-title">${escapeHtml(answer.label || `Odpowiedź ${answerIndex + 1}`)}</div>
+            <div class="item-subtitle">value: ${escapeHtml(String(answer.value))}</div>
+          </div>
+          <div class="answer-actions"></div>
+        </div>
+        <div class="card-body"></div>
+      `;
+      const actions = card.querySelector(".answer-actions");
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "tiny-button";
+      removeBtn.type = "button";
+      removeBtn.textContent = "Usuń";
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        confirmAction("Usuń odpowiedź", "Usunąć tę odpowiedź?", () => {
+          question.answers.splice(answerIndex, 1);
+          renderQuestionsOnly();
+        })();
+      });
+      actions.append(removeBtn);
+
+      const body = card.querySelector(".card-body");
+      body.append(
+        twoColumn(
+          inputField("label", "label", answer.label, value => {
+            answer.label = value;
+            validateAll();
+            const titleDiv = card.querySelector(".item-title");
+            if (titleDiv) titleDiv.textContent = escapeHtml(value || `Odpowiedź ${answerIndex + 1}`);
+          }),
+          inputField("value", "value", answer.value, value => {
+            answer.value = parseNumber(value);
+            validateAll();
+            const subtitleDiv = card.querySelector(".item-subtitle");
+            if (subtitleDiv) subtitleDiv.textContent = `value: ${escapeHtml(String(answer.value))}`;
+          }, "number")
+        ),
+        multiSelectGrid(answer)
+      );
+      return card;
+    }
+
+    /**
+     * Przełącza widoczną sekcję edytora bez przeładowania strony.
+     */
+    function switchSection(section) {
+      els.navTabs.forEach(tab => tab.classList.toggle("active", tab.dataset.section === section));
+      els.panels.forEach(panel => panel.classList.toggle("active", panel.dataset.sectionPanel === section));
+      els.sectionTitle.textContent = sectionTitles[section];
+      
+      // Jeśli przełączamy się na pytania, zresetuj paginację i odśwież
+      if (section === "questions") {
+        PAGINATION.currentPage = 1;
+        renderQuestionsOnly();
+        updatePaginationUI();
+      }
+    }
+
+    /**
+     * Włącza lub wyłącza ciemny motyw.
+     */
+    function toggleTheme() {
+      document.body.classList.toggle("dark");
+      els.themeToggle.textContent = document.body.classList.contains("dark") ? "☀" : "☾";
+    }
+
+    /**
+     * Czyści projekt i tworzy minimalny startowy zestaw pól.
+     */
+    function resetProject() {
+      state.pairsOfValues = [];
+      state.ideologies = [];
+      state.parties = [];
+      state.questions = [];
+      addPair(false);
+      addIdeology(false);
+      addParty(false);
+      addQuestion(false);
+      PAGINATION.currentPage = 1;
+      renderAll();
+      toast("Utworzono nowy projekt.");
+    }
+
+    /**
+     * Dodaje nową parę wartości.
+     */
+    function addPair(shouldRender = true) {
+      state.pairsOfValues.push({ left: "", right: "", leftDef: "", rightDef: "" });
+      if (shouldRender) {
+        renderAll();
+        toast("Dodano parę wartości.");
+      }
+    }
+
+    function addIdeology(shouldRender = true) {
+      state.ideologies.push({ name: "", description: "" });
+      if (shouldRender) {
+        renderAll();
+        toast("Dodano ideologię.");
+      }
+    }
+
+    function addParty(shouldRender = true) {
+      state.parties.push({ name: "", description: "" });
+      if (shouldRender) {
+        renderAll();
+        toast("Dodano partię.");
+      }
+    }
+
+    function addQuestion(shouldRender = true) {
+      state.questions.push({
+        id: state.questions.length + 1,
+        text: "",
+        description: "",
+        answers: [
+          createAnswer("Zdecydowanie zgadzam się", 1.5),
+          createAnswer("Częściowo zgadzam się", 1),
+          createAnswer("Częściowo nie zgadzam się", -1),
+          createAnswer("Zdecydowanie nie zgadzam się", -1.5),
+          createAnswer("Pomiń pytanie", 0)
+        ]
+      });
+      renumberQuestions();
+      
+      // Jeśli po dodaniu pytania wykraczamy poza obecną stronę, przejdź na ostatnią
+      const totalPages = getTotalPages();
+      if (PAGINATION.currentPage < totalPages) {
+        PAGINATION.currentPage = totalPages;
+      }
+      
+      if (shouldRender) {
+        renderAll();
+        toast("Dodano pytanie.");
+      }
+    }
+
+    function createAnswer(label = "", value = 0) {
+      return {
+        label,
+        value,
+        values_for: [],
+        values_against: [],
+        ideologies_for: [],
+        ideologies_against: [],
+        parties_for: [],
+        parties_against: []
+      };
+    }
+
+    function renderAll() {
+      cleanupReferences();
+      renumberQuestions();
+      renderPairs();
+      renderNameDescriptionList("ideologies", els.ideologiesList, "Ideologia");
+      renderNameDescriptionList("parties", els.partiesList, "Partia");
+      renderQuestionsOnly();
+      renderCounters();
+      validateAll();
+      updatePaginationUI();
+    }
+
+    function renderCounters() {
+      const pairCount = document.querySelector('[data-count="pairs"]');
+      if (pairCount) pairCount.textContent = state.pairsOfValues.length;
+      const ideologyCount = document.querySelector('[data-count="ideologies"]');
+      if (ideologyCount) ideologyCount.textContent = state.ideologies.length;
+      const partyCount = document.querySelector('[data-count="parties"]');
+      if (partyCount) partyCount.textContent = state.parties.length;
+      const questionCount = document.querySelector('[data-count="questions"]');
+      if (questionCount) questionCount.textContent = state.questions.length;
+    }
+
+    function renderPairs() {
+      els.pairsList.innerHTML = "";
+      if (!state.pairsOfValues.length) {
+        els.pairsList.append(emptyState("Brak par wartości. Dodaj pierwszą oś testu."));
+        return;
+      }
+
+      state.pairsOfValues.forEach((pair, index) => {
+        const card = cardShell("pair", index, pair.left && pair.right ? `${pair.left} ↔ ${pair.right}` : `Para ${index + 1}`, "pairsOfValues", () => {
+          removeItem(state.pairsOfValues, index, "Usunąć tę parę wartości?");
+        });
+
+        const body = card.querySelector(".card-body");
+        body.append(
+          twoColumn(
+            inputField("left", "left", pair.left, value => updatePair(index, "left", value)),
+            inputField("right", "right", pair.right, value => updatePair(index, "right", value))
+          ),
+          twoColumn(
+            textareaField("leftDef", "leftDef", pair.leftDef, value => updatePair(index, "leftDef", value)),
+            textareaField("rightDef", "rightDef", pair.rightDef, value => updatePair(index, "rightDef", value))
+          )
+        );
+        els.pairsList.append(card);
+      });
+
+      enableDrag(els.pairsList, state.pairsOfValues, renderAll);
+    }
+
+    function updatePair(index, key, value) {
+      state.pairsOfValues[index][key] = value;
+      renderCounters();
+      validateAll();
+    }
+
+    function renderNameDescriptionList(type, host, label) {
+      host.innerHTML = "";
+      if (!state[type].length) {
+        host.append(emptyState(`Brak elementów w sekcji ${type}.`));
+        return;
+      }
+
+      state[type].forEach((item, index) => {
+        const card = cardShell(type, index, item.name || `${label} ${index + 1}`, type, () => {
+          removeItem(state[type], index, `Usunąć element "${item.name || label}"?`);
+        });
+        const body = card.querySelector(".card-body");
+        body.append(
+          inputField("name", "name", item.name, value => {
+            item.name = value;
+            validateAll();
+          }),
+          textareaField("description", "description", item.description, value => {
+            item.description = value;
+            validateAll();
+          })
+        );
+        host.append(card);
+      });
+
+      enableDrag(host, state[type], renderAll);
+    }
+
+    function multiSelectGrid(answer) {
+      const grid = document.createElement("div");
+      grid.className = "multi-grid";
+      const valueOptions = getValueOptions();
+      const ideologyOptions = state.ideologies.map(item => item.name).filter(Boolean);
+      const partyOptions = state.parties.map(item => item.name).filter(Boolean);
+
+      grid.append(
+        multiSelect("values_for", valueOptions, answer.values_for, values => answer.values_for = values),
+        multiSelect("values_against", valueOptions, answer.values_against, values => answer.values_against = values),
+        multiSelect("ideologies_for", ideologyOptions, answer.ideologies_for, values => answer.ideologies_for = values),
+        multiSelect("ideologies_against", ideologyOptions, answer.ideologies_against, values => answer.ideologies_against = values),
+        multiSelect("parties_for", partyOptions, answer.parties_for, values => answer.parties_for = values),
+        multiSelect("parties_against", partyOptions, answer.parties_against, values => answer.parties_against = values)
+      );
+
+      return grid;
+    }
+
+    function multiSelect(label, options, selected, onChange) {
+      const wrap = document.createElement("div");
+      wrap.className = "multi-select";
+      const safeSelected = Array.isArray(selected) ? selected : [];
+      const uniqueOptions = unique([...options, ...safeSelected.filter(Boolean)]);
+
+      wrap.innerHTML = `
+        <div class="multi-label">${label}</div>
+        <div class="multi-box">
+          <div class="chips"></div>
+          <input class="search-box" type="text" placeholder="Szukaj i zaznacz...">
+          <div class="option-list"></div>
+        </div>
+      `;
+
+      const chips = wrap.querySelector(".chips");
+      const search = wrap.querySelector(".search-box");
+      const list = wrap.querySelector(".option-list");
+
+      const paint = () => {
+        const query = search.value.trim().toLowerCase();
+        chips.innerHTML = "";
+        safeSelected.forEach(value => {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.innerHTML = `${escapeHtml(value)} <button type="button" title="Usuń">×</button>`;
+          chip.querySelector("button").addEventListener("click", () => {
+            const next = safeSelected.filter(item => item !== value);
+            onChange(next);
+            renderQuestionsOnly();
+          });
+          chips.append(chip);
+        });
+
+        list.innerHTML = "";
+        uniqueOptions
+          .filter(option => option.toLowerCase().includes(query))
+          .forEach(option => {
+            const item = document.createElement("label");
+            item.className = "option-item";
+            item.innerHTML = `<input type="checkbox" ${safeSelected.includes(option) ? "checked" : ""}> <span>${escapeHtml(option)}</span>`;
+            item.querySelector("input").addEventListener("change", event => {
+              const next = event.target.checked ? unique([...safeSelected, option]) : safeSelected.filter(value => value !== option);
+              onChange(next);
+              renderQuestionsOnly();
+            });
+            list.append(item);
+          });
+
+        if (!uniqueOptions.length) {
+          list.append(emptyState("Brak dostępnych opcji."));
+        }
+      };
+
+      search.addEventListener("input", paint);
+      paint();
+      return wrap;
+    }
+
+    function cardShell(type, index, title, subtitle, onRemove) {
+      const card = document.createElement("article");
+      card.className = "editor-card";
+      card.draggable = true;
+      card.dataset.index = index;
+      card.dataset.type = type;
+      card.innerHTML = `
+        <div class="item-header">
+          <span class="drag-handle" title="Przeciągnij">↕</span>
+          <div>
+            <div class="item-title">${escapeHtml(title)}</div>
+            <div class="item-subtitle">${escapeHtml(subtitle)}</div>
+          </div>
+          <div class="item-actions"></div>
+        </div>
+        <div class="card-body"></div>
+      `;
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "tiny-button";
+      removeButton.textContent = "Usuń";
+      removeButton.addEventListener("click", confirmAction("Usuń element", "Tej operacji nie można cofnąć.", onRemove));
+      card.querySelector(".item-actions").append(removeButton);
+      return card;
+    }
+
+    function inputField(id, label, value, onInput, type = "text", readonly = false) {
+      const field = document.createElement("label");
+      field.className = "field";
+      field.innerHTML = `<span>${label}</span><input type="${type}" value="${escapeAttribute(value ?? "")}" ${readonly ? "readonly" : ""}>`;
+      const input = field.querySelector("input");
+      if (type === "number") input.step = "any";
+      input.addEventListener("input", event => onInput(event.target.value));
+      input.dataset.fieldId = id;
+      return field;
+    }
+
+    function textareaField(id, label, value, onInput) {
+      const field = document.createElement("label");
+      field.className = "field";
+      field.innerHTML = `<span>${label}</span><textarea>${escapeHtml(value ?? "")}</textarea>`;
+      const textarea = field.querySelector("textarea");
+      textarea.addEventListener("input", event => onInput(event.target.value));
+      textarea.dataset.fieldId = id;
+      return field;
+    }
+
+    function twoColumn(first, second) {
+      const grid = document.createElement("div");
+      grid.className = "grid-two";
+      grid.append(first, second);
+      return grid;
+    }
+
+    function emptyState(text) {
+      const box = document.createElement("div");
+      box.className = "empty-state";
+      box.textContent = text;
+      return box;
+    }
+
+    function enableDrag(container, array, afterDrop) {
+      let draggedIndex = null;
+
+      container.querySelectorAll("[draggable='true']").forEach(item => {
+        item.addEventListener("dragstart", event => {
+          draggedIndex = Number(item.dataset.index);
+          item.classList.add("dragging");
+          event.dataTransfer.effectAllowed = "move";
+        });
+
+        item.addEventListener("dragend", () => item.classList.remove("dragging"));
+
+        item.addEventListener("dragover", event => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        });
+
+        item.addEventListener("drop", event => {
+          event.preventDefault();
+          const targetIndex = Number(item.dataset.index);
+          if (draggedIndex === null || draggedIndex === targetIndex) return;
+          const [moved] = array.splice(draggedIndex, 1);
+          array.splice(targetIndex, 0, moved);
+          draggedIndex = null;
+          afterDrop();
+          toast("Zmieniono kolejność.");
+        });
+      });
+    }
+
+    function removeItem(array, index, message) {
+      array.splice(index, 1);
+      renumberQuestions();
+      
+      // Sprawdź czy bieżąca strona ma jeszcze jakieś pytania
+      const totalPages = getTotalPages();
+      if (PAGINATION.currentPage > totalPages && totalPages > 0) {
+        PAGINATION.currentPage = totalPages;
+      }
+      
+      renderAll();
+      toast(message ? "Usunięto element." : "Usunięto.");
+    }
+
+    function confirmAction(title, message, callback) {
+      return () => {
+        els.confirmTitle.textContent = title;
+        els.confirmMessage.textContent = message;
+        pendingConfirm = callback;
+        els.confirmDialog.showModal();
+      };
+    }
+
+    function renumberQuestions() {
+      state.questions.forEach((question, index) => {
+        question.id = index + 1;
+      });
+    }
+
+    function getValueOptions() {
+      return unique(state.pairsOfValues.flatMap(pair => [pair.left, pair.right]).filter(Boolean));
+    }
+
+    function cleanupReferences() {
+      const allowed = {
+        values_for: getValueOptions(),
+        values_against: getValueOptions(),
+        ideologies_for: state.ideologies.map(item => item.name).filter(Boolean),
+        ideologies_against: state.ideologies.map(item => item.name).filter(Boolean),
+        parties_for: state.parties.map(item => item.name).filter(Boolean),
+        parties_against: state.parties.map(item => item.name).filter(Boolean)
+      };
+
+      state.questions.forEach(question => {
+        question.answers.forEach(answer => {
+          answerListKeys.forEach(key => {
+            answer[key] = ensureArray(answer[key]).filter(value => allowed[key].includes(value));
+          });
+        });
+      });
+    }
+
+    function validateAll() {
+      document.querySelectorAll(".invalid").forEach(node => node.classList.remove("invalid"));
+      const errors = [];
+
+      state.pairsOfValues.forEach((pair, index) => {
+        if (!pair.left.trim() || !pair.right.trim()) errors.push(`Para ${index + 1}: uzupełnij left i right.`);
+      });
+
+      validateNamedCollection(state.ideologies, "Ideologia", errors);
+      validateNamedCollection(state.parties, "Partia", errors);
+
+      state.questions.forEach(question => {
+        if (!question.text.trim()) errors.push(`Pytanie ${question.id}: uzupełnij text.`);
+        question.answers.forEach((answer, index) => {
+          if (!answer.label.trim()) errors.push(`Pytanie ${question.id}, odpowiedź ${index + 1}: uzupełnij label.`);
+          if (Number.isNaN(Number(answer.value))) errors.push(`Pytanie ${question.id}, odpowiedź ${index + 1}: value musi być liczbą.`);
+        });
+      });
+
+      return errors;
+    }
+
+    function validateNamedCollection(collection, label, errors) {
+      collection.forEach((item, index) => {
+        if (!item.name.trim()) errors.push(`${label} ${index + 1}: uzupełnij name.`);
+      });
+    }
+
+    function openExportDialog() {
+      updateJsonPreview();
+      els.exportDialog.showModal();
+    }
+
+    function buildExportObject() {
+      renumberQuestions();
+      const selected = [...document.querySelectorAll(".export-check:checked")].map(input => input.value);
+      const output = {};
+
+      if (selected.includes("pairsOfValues")) output.pairsOfValues = clone(state.pairsOfValues);
+      if (selected.includes("ideologies")) output.ideologies = clone(state.ideologies);
+      if (selected.includes("parties")) output.parties = clone(state.parties);
+      if (selected.includes("questions")) output.questions = clone(state.questions);
+
+      return output;
+    }
+
+    function updateJsonPreview() {
+      const errors = validateAll();
+      els.validationSummary.innerHTML = errors.slice(0, 8).map(error => `<div>${escapeHtml(error)}</div>`).join("");
+      if (errors.length > 8) {
+        els.validationSummary.innerHTML += `<div>...oraz ${errors.length - 8} więcej.</div>`;
+      }
+      els.jsonPreview.value = JSON.stringify(buildExportObject(), null, 2);
+    }
+
+    async function copyJson() {
+      updateJsonPreview();
+      try {
+        await navigator.clipboard.writeText(els.jsonPreview.value);
+        toast("Skopiowano JSON do schowka.");
+      } catch {
+        els.jsonPreview.select();
+        document.execCommand("copy");
+        toast("Skopiowano JSON.");
+      }
+    }
+
+    function downloadJson() {
+      updateJsonPreview();
+      const blob = new Blob([els.jsonPreview.value], { type: "application/json;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "konfiguracja-testu.json";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+      toast("Rozpoczęto pobieranie pliku.");
+    }
+
+    function importFromTextarea() {
+      const raw = els.importText.value.trim();
+      if (!raw) {
+        toast("Wklej JSON albo wybierz plik.", "error");
+        return;
+      }
+      try {
+        applyImportedData(JSON.parse(raw));
+        els.importDialog.close();
+        toast("Zaimportowano JSON.");
+      } catch (error) {
+        toast(`Nie udało się wczytać JSON: ${error.message}`, "error");
+      }
+    }
+
+    function handleFileImport(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        els.importText.value = reader.result;
+        toast("Plik wczytany do pola importu.");
+      };
+      reader.onerror = () => toast("Nie udało się odczytać pliku.", "error");
+      reader.readAsText(file, "utf-8");
+    }
+
+    function applyImportedData(data) {
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw new Error("główny element musi być obiektem");
+      }
+
+      state.pairsOfValues = ensureArray(data.pairsOfValues).map(item => ({
+        left: stringValue(item.left),
+        right: stringValue(item.right),
+        leftDef: stringValue(item.leftDef),
+        rightDef: stringValue(item.rightDef)
+      }));
+
+      state.ideologies = ensureArray(data.ideologies).map(normalizeNamedItem);
+      state.parties = ensureArray(data.parties).map(normalizeNamedItem);
+
+      state.questions = ensureArray(data.questions).map((question, index) => ({
+        id: index + 1,
+        text: stringValue(question.text),
+        description: stringValue(question.description),
+        answers: ensureArray(question.answers).map(normalizeAnswer)
+      }));
+
+      if (!state.questions.length) addQuestion(false);
+      PAGINATION.currentPage = 1;
+      renderAll();
+    }
+
+    function normalizeNamedItem(item = {}) {
+      return {
+        name: stringValue(item.name),
+        description: stringValue(item.description)
+      };
+    }
+
+    function normalizeAnswer(item = {}) {
+      const answer = createAnswer(stringValue(item.label), parseNumber(item.value));
+      answerListKeys.forEach(key => {
+        answer[key] = ensureArray(item[key]).map(stringValue).filter(Boolean);
+      });
+      return answer;
+    }
+
+    function toast(message, type = "success") {
+      const item = document.createElement("div");
+      item.className = `toast ${type}`;
+      item.textContent = message;
+      els.toastHost.append(item);
+      setTimeout(() => item.remove(), 3600);
+    }
+
+    function unique(values) {
+      return [...new Set(values)];
+    }
+
+    function ensureArray(value) {
+      return Array.isArray(value) ? value : [];
+    }
+
+    function stringValue(value) {
+      return typeof value === "string" ? value : "";
+    }
+
+    function parseNumber(value) {
+      const parsed = Number(value);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
+    function clone(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeAttribute(value) {
+      return escapeHtml(value).replaceAll("`", "&#096;");
+    }
+
+    init();
+  </script>
 </body>
 </html>
